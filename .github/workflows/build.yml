@@ -1,127 +1,53 @@
-name: Build WinlatorXR Skyrim Quest 3S Edition
+name: Build WinlatorXR Skyrim Quest 3S
 
 on:
   push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
   build-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17 for Android Gradle
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Clone WinlatorXR with submodules
+      - name: Inject Skyrim Quest 3S Presets and Sign APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git clone --recursive https://github.com/WinlatorXR/WinlatorXR.git winlatorxr_src
-
-      - name: Download latest release APK and inject base assets
-        run: |
-          cd winlatorxr_src
-          LATEST_APK=$(curl -s https://api.github.com/repos/WinlatorXR/WinlatorXR/releases/latest | grep browser_download_url | grep '\.apk"' | head -n 1 | cut -d '"' -f 4)
-          echo "Downloading base assets from: $LATEST_APK"
-          curl -L "$LATEST_APK" -o base.apk
-          mkdir -p temp_apk app/src/main/assets
-          unzip -q base.apk -d temp_apk
-          for item in temp_apk/assets/*; do
-            name=$(basename "$item")
-            if [ "$name" != "dexopt" ]; then
-              cp -rf "$item" app/src/main/assets/
-            fi
-          done
-          rm -rf temp_apk base.apk
-
-      - name: Generate Skyrim VR / SE Optimization Preset for Quest 3S
-        run: |
-          PRESET_OUT="winlatorxr_src/app/src/main/assets/skyrim_quest3s_preset"
-          mkdir -p "$PRESET_OUT"
-
-          cat << 'EOF' > "$PRESET_OUT/SkyrimPrefs.ini"
-          [Display]
-          iSize W=1280
-          iSize H=720
-          bFull Screen=1
-          bBorderless=1
-          iVSyncPresentInterval=0
-          fShadowDistance=1500.0000
-          iShadowMapResolution=512
-          iMaxAnisotropy=2
-          iMultiSample=0
-          bFXAAEnabled=1
-          bUseTAA=0
-          fMeshLODLevel1FadeDist=3072.0000
-          fMeshLODLevel2FadeDist=2048.0000
-          fTreesMidLODSwitchDist=2500.0000
-
-          [Grass]
-          bAllowCreateGrass=0
-          bAllowLoadGrass=0
-
-          [Water]
-          bUseWaterRefractions=0
-          bUseWaterReflections=0
-          bUseWaterDepth=0
-
-          [VR]
-          fVrScale=70.0000
-          bUseWandDirectionalMovement=1
-
-          [Particles]
-          iMaxDesired=250
-          EOF
-
-          cat << 'EOF' > "$PRESET_OUT/Skyrim.ini"
-          [General]
-          sLanguage=RUSSIAN
-          uExterior Cell Buffer=16
-          bPreemptivelyUnloadCells=1
-          iPreloadSizeLimit=26214400
-
-          [HAVOK]
-          fMaxTime=0.0138
-          fMaxTimeComplex=0.0277
-
-          [Papyrus]
-          fUpdateBudgetMS=1.2
-          fExtraTaskletBudgetMS=1.2
-          fPostLoadUpdateTimeMS=500.0
-          bEnableLogging=0
-          bEnableTrace=0
-          EOF
-
-          cat << 'EOF' > "$PRESET_OUT/dxvk.conf"
-          dxvk.enableAsync = True
-          dxvk.numCompilerThreads = 4
-          dxvk.maxFrameLatency = 1
-          dxvk.tearFree = False
-          d3d9.maxFrameLatency = 1
-          d3d11.maxFeatureLevel = 11_0
-          d3d11.constantBufferRangeCheck = False
-          EOF
-
+          mkdir -p workspace/assets/skyrim_quest3s_preset
           mkdir -p skyrim_quest3s_configs
-          cp -r "$PRESET_OUT/"* skyrim_quest3s_configs/
 
-      - name: Build Custom WinlatorXR APK
-        run: |
-          cd winlatorxr_src
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+          printf "[Display]\niSize W=1280\niSize H=720\nbFull Screen=1\nbBorderless=1\niVSyncPresentInterval=0\nfShadowDistance=1500.0000\niShadowMapResolution=512\niMaxAnisotropy=2\niMultiSample=0\nbFXAAEnabled=1\nbUseTAA=0\nfMeshLODLevel1FadeDist=3072.0000\nfMeshLODLevel2FadeDist=2048.0000\nfTreesMidLODSwitchDist=2500.0000\n\n[Grass]\nbAllowCreateGrass=0\nbAllowLoadGrass=0\n\n[Water]\nbUseWaterRefractions=0\nbUseWaterReflections=0\nbUseWaterDepth=0\n\n[VR]\nfVrScale=70.0000\nbUseWandDirectionalMovement=1\n\n[Particles]\niMaxDesired=250\n" > skyrim_quest3s_configs/SkyrimPrefs.ini
 
-      - name: Upload Compiled APK and Skyrim Configs
+          printf "[General]\nsLanguage=RUSSIAN\nuExterior Cell Buffer=16\nbPreemptivelyUnloadCells=1\niPreloadSizeLimit=26214400\n\n[HAVOK]\nfMaxTime=0.0138\nfMaxTimeComplex=0.0277\n\n[Papyrus]\nfUpdateBudgetMS=1.2\nfExtraTaskletBudgetMS=1.2\nfPostLoadUpdateTimeMS=500.0\nbEnableLogging=0\nbEnableTrace=0\n" > skyrim_quest3s_configs/Skyrim.ini
+
+          printf "dxvk.enableAsync = True\ndxvk.numCompilerThreads = 4\ndxvk.maxFrameLatency = 1\ndxvk.tearFree = False\nd3d9.maxFrameLatency = 1\nd3d11.maxFeatureLevel = 11_0\nd3d11.constantBufferRangeCheck = False\n" > skyrim_quest3s_configs/dxvk.conf
+
+          printf "BOX64_DYNAREC_SAFEFLAGS=0\nBOX64_DYNAREC_FASTNAN=1\nBOX64_DYNAREC_FASTROUND=1\nBOX64_DYNAREC_X87DOUBLE=0\nBOX64_DYNAREC_BIGBLOCK=2\nBOX64_DYNAREC_STRONGMEM=1\nBOX64_DYNAREC_FORWARD=512\nBOX64_DYNAREC_CALLRET=1\nBOX64_AVX=0\nDXVK_ASYNC=1\nDXVK_STATE_CACHE=1\nMESA_NO_ERROR=1\nWINEESYNC=1\nWINEFSYNC=1\nXR_MODE=1\nXR_3D_MODE=1\n" > skyrim_quest3s_configs/quest3s_container.env
+
+          cp skyrim_quest3s_configs/* workspace/assets/skyrim_quest3s_preset/
+
+          LATEST_APK=$(python3 -c "import os, urllib.request, json; req = urllib.request.Request('https://api.github.com/repos/WinlatorXR/WinlatorXR/releases', headers={'User-Agent': 'Mozilla/5.0', 'Authorization': 'Bearer ' + os.environ['GH_TOKEN']}); data = json.loads(urllib.request.urlopen(req).read().decode()); print(next(a['browser_download_url'] for r in data for a in r.get('assets', []) if a['name'].endswith('.apk')))")
+          echo "Downloading APK from: $LATEST_APK"
+          curl -L "$LATEST_APK" -o workspace/base.apk
+
+          cd workspace
+          zip -r base.apk assets/skyrim_quest3s_preset/
+
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
+          "$BUILD_TOOLS/zipalign" -p -f -v 4 base.apk aligned.apk
+
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out ../WinlatorXR-Skyrim-Quest3S.apk aligned.apk
+
+      - name: Upload Ready APK and Skyrim Configs
         uses: actions/upload-artifact@v4
         with:
           name: WinlatorXR-Skyrim-Quest3S-Bundle
           path: |
-            winlatorxr_src/app/build/outputs/apk/debug/*.apk
+            WinlatorXR-Skyrim-Quest3S.apk
             skyrim_quest3s_configs/*
