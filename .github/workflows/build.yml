@@ -1,0 +1,127 @@
+name: Build WinlatorXR Skyrim Quest 3S Edition
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 for Android Gradle
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Clone WinlatorXR with submodules
+        run: |
+          git clone --recursive https://github.com/WinlatorXR/WinlatorXR.git winlatorxr_src
+
+      - name: Download latest release APK and inject base assets
+        run: |
+          cd winlatorxr_src
+          LATEST_APK=$(curl -s https://api.github.com/repos/WinlatorXR/WinlatorXR/releases/latest | grep browser_download_url | grep '\.apk"' | head -n 1 | cut -d '"' -f 4)
+          echo "Downloading base assets from: $LATEST_APK"
+          curl -L "$LATEST_APK" -o base.apk
+          mkdir -p temp_apk app/src/main/assets
+          unzip -q base.apk -d temp_apk
+          for item in temp_apk/assets/*; do
+            name=$(basename "$item")
+            if [ "$name" != "dexopt" ]; then
+              cp -rf "$item" app/src/main/assets/
+            fi
+          done
+          rm -rf temp_apk base.apk
+
+      - name: Generate Skyrim VR / SE Optimization Preset for Quest 3S
+        run: |
+          PRESET_OUT="winlatorxr_src/app/src/main/assets/skyrim_quest3s_preset"
+          mkdir -p "$PRESET_OUT"
+
+          cat << 'EOF' > "$PRESET_OUT/SkyrimPrefs.ini"
+          [Display]
+          iSize W=1280
+          iSize H=720
+          bFull Screen=1
+          bBorderless=1
+          iVSyncPresentInterval=0
+          fShadowDistance=1500.0000
+          iShadowMapResolution=512
+          iMaxAnisotropy=2
+          iMultiSample=0
+          bFXAAEnabled=1
+          bUseTAA=0
+          fMeshLODLevel1FadeDist=3072.0000
+          fMeshLODLevel2FadeDist=2048.0000
+          fTreesMidLODSwitchDist=2500.0000
+
+          [Grass]
+          bAllowCreateGrass=0
+          bAllowLoadGrass=0
+
+          [Water]
+          bUseWaterRefractions=0
+          bUseWaterReflections=0
+          bUseWaterDepth=0
+
+          [VR]
+          fVrScale=70.0000
+          bUseWandDirectionalMovement=1
+
+          [Particles]
+          iMaxDesired=250
+          EOF
+
+          cat << 'EOF' > "$PRESET_OUT/Skyrim.ini"
+          [General]
+          sLanguage=RUSSIAN
+          uExterior Cell Buffer=16
+          bPreemptivelyUnloadCells=1
+          iPreloadSizeLimit=26214400
+
+          [HAVOK]
+          fMaxTime=0.0138
+          fMaxTimeComplex=0.0277
+
+          [Papyrus]
+          fUpdateBudgetMS=1.2
+          fExtraTaskletBudgetMS=1.2
+          fPostLoadUpdateTimeMS=500.0
+          bEnableLogging=0
+          bEnableTrace=0
+          EOF
+
+          cat << 'EOF' > "$PRESET_OUT/dxvk.conf"
+          dxvk.enableAsync = True
+          dxvk.numCompilerThreads = 4
+          dxvk.maxFrameLatency = 1
+          dxvk.tearFree = False
+          d3d9.maxFrameLatency = 1
+          d3d11.maxFeatureLevel = 11_0
+          d3d11.constantBufferRangeCheck = False
+          EOF
+
+          mkdir -p skyrim_quest3s_configs
+          cp -r "$PRESET_OUT/"* skyrim_quest3s_configs/
+
+      - name: Build Custom WinlatorXR APK
+        run: |
+          cd winlatorxr_src
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Compiled APK and Skyrim Configs
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinlatorXR-Skyrim-Quest3S-Bundle
+          path: |
+            winlatorxr_src/app/build/outputs/apk/debug/*.apk
+            skyrim_quest3s_configs/*
